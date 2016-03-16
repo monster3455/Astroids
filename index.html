@@ -1,0 +1,999 @@
+<html>
+
+<head>
+	<script src="libs/three.js"></script>
+	<script src="libs/threex.keyboardstate.js"></script>
+	<script src="http://mrdoob.github.com/three.js/examples/fonts/helvetiker_regular.typeface.js"></script>
+	
+	<link rel="stylesheet" type="text/css" href="css/style.css" />
+	
+<script id="worker2" type="javascript/worker">
+
+	var i = 0;
+
+	function timedCount() {
+		i = i + 1;
+		postMessage(i);
+		setTimeout("timedCount()",500);
+	}
+
+	timedCount();
+	
+	
+</script>
+	
+</head>
+
+<body>
+<!--<p>Count numbers: <output id="result"></output></p>-->
+
+<div id="main" width="100%" height="100%" style="position:relative;">
+	<div id="rawr" width="10%" height="10%" style="position:absolute; left:10px; top:10px; z-index:1000" >
+	<p><font face="verdana" size="3" color="red">Score: <output id="result">0</output></font></p> </div>
+	<div id="rawr2" width="10%" height="10%" style="position:absolute; right:10px; top:10px; z-index:1000" >
+	<p><font face="verdana" size="3" color="red">Lives: <output id="result2">3</output></font></p> </div>
+	<div id="hudview" width="10%" height="10%" style="position:absolute; left:10px; bottom:10px; z-index:1000" ></div>
+</div>
+
+<script>
+	var renderer;
+	var scene;
+	var camera, hubcamera;
+	var worker;
+	var keyboard;
+	var cannon;
+	var bullet;
+	var bulletlist = [];
+	var bulletShot = false;
+	
+	var SIZE = 500;
+	
+	var plane;
+	
+	//keyboard = new THREEx.KeyboardState();
+
+	var offset = new THREE.Vector3();
+			
+	var win,bg,dice;
+	function loadSounds()
+	{
+		win = new Audio("sounds/Win.mp3");
+		bg = new Audio("sounds/BG2.mp3");
+		dice = new Audio("sounds/Dice.mp3");
+	}
+	
+	var bulGeo, bulMat;
+	function GenerateBullet()
+	{
+		bulGeo = new THREE.SphereGeometry( 1, 8 , 8  );
+		bulMat = new THREE.MeshLambertMaterial({color:'white'});
+		bullet = new THREE.Mesh( bulGeo, bulMat );
+	}
+	
+	var spotLight;
+	function init()
+	{
+		var w = window.innerWidth;
+		var h = window.innerHeight;
+		
+		loadSounds();
+		
+		bg.autoplay = true;
+		bg.loop = true;
+		
+		keyboard = new THREEx.KeyboardState();
+		
+		scene = new THREE.Scene();
+		
+		var ScenePos = new THREE.Vector3(0,0,0);
+		var CamPosMain = new THREE.Vector3(0,-50,30);
+	
+		camera = new THREE.PerspectiveCamera( 45, w / h, 0.1, 100000 );
+		camera.position.x = CamPosMain.x;
+		camera.position.y = CamPosMain.y;
+		camera.position.z = CamPosMain.z;
+		camera.lookAt( ScenePos );
+		
+		var ScenePos2 = new THREE.Vector3(10000,10000,0);
+		hudcamera = new THREE.PerspectiveCamera( 45, 1, .1, 3000 );
+		hudcamera.position.x = 10000;
+		hudcamera.position.y = 10000;
+		hudcamera.position.z = 700;
+		hudcamera.lookAt( ScenePos2 );
+		
+		renderer = new THREE.WebGLRenderer();
+		renderer.setClearColor( 0x000000, 1.0 );
+		renderer.setSize( w, h );
+		renderer.shadowMap.enabled = false;
+		
+		renderer2 = new THREE.WebGLRenderer();
+		renderer2.setClearColor( 0x000000, 0 );
+		renderer2.setSize( 200, 200 );
+		renderer2.shadowMapEnabled = false;
+		
+		
+		GenerateBullet();
+
+        // add spotlight for the shadows
+        spotLight = new THREE.SpotLight( 0xffffff );
+        spotLight.position.set( 0, -40, 1500 );
+		spotLight.lookAt( ScenePos );
+        //spotLight.shadowCameraNear = 20;
+        //spotLight.shadowCameraFar = 1500;
+        spotLight.castShadow = false;
+        //scene.add(spotLight);
+		//shoot();
+		generatePieces();
+		
+		createCheckerBoard();
+		
+		// add spotlight for the shadows
+        spotLight2 = new THREE.SpotLight( 0xffffff );
+        spotLight2.position.set( 10000, 10000, 1500 );
+		spotLight2.lookAt( ScenePos2 );
+        //spotLight.shadowCameraNear = 20;
+        //spotLight.shadowCameraFar = 1500;
+        spotLight2.castShadow = false;
+        scene.add(spotLight2);
+		//shoot();
+		
+		var imagePrefix = "images/";
+		var directions  = ["stars", "stars", "stars", "stars", "stars", "stars"];
+		var imageSuffix = ".jpeg";
+		var skyGeometry = new THREE.CubeGeometry( 50000, 50000, 50000 );	
+	
+		var materialArray = [];
+		for (var i = 0; i < 6; i++)
+			materialArray.push( new THREE.MeshBasicMaterial({
+			map: THREE.ImageUtils.loadTexture( imagePrefix + directions[i] + imageSuffix ),
+			side: THREE.BackSide
+		}));
+		var skyMaterial = new THREE.MeshFaceMaterial( materialArray );
+		var skyBox = new THREE.Mesh( skyGeometry, skyMaterial );
+		scene.add( skyBox );
+		
+		
+		
+		/*plane = new THREE.Mesh(new THREE.PlaneBufferGeometry(24*10, 24*10, 10, 10), new THREE.MeshBasicMaterial({transparent: true, color: 0x0000ff,opacity: 0.0}));
+		plane.position.z = .5;
+		plane.name = "Plane";
+		scene.add( plane );*/
+		
+		renderer2.autoClear = false;
+		
+		var container2 = document.getElementById("hudview");
+		document.body.appendChild( container2 );
+		container2.appendChild( renderer2.domElement );
+
+		document.body.appendChild( renderer.domElement );		
+		
+		//renderer.domElement.addEventListener( 'mousemove', onDocumentMouseMove, false );
+		//renderer.domElement.addEventListener( 'mousedown', onDocumentMouseDown, false );
+		//renderer.domElement.addEventListener( 'mouseup', onDocumentMouseUp, false );	
+		/*
+		material2 = new THREE.MeshBasicMaterial({
+			
+		
+		});
+ 
+		group2 = new THREE.Object3D();
+ 
+		var loader2 = new THREE.JSONLoader();
+		loader2.load('models/spaceship.js', modelLoadedCallback);
+		*/
+		render();
+	}
+	var material2, group2, loader2, geometry2, mesh2;
+	
+	function modelLoadedCallback(geometry2) {
+ 
+        mesh2 = new THREE.Mesh( geometry2, material2 );
+ 
+        group2.add(mesh2);
+        scene.add( group2 );
+ 
+	}
+	
+	var numberMade = 4;
+	var destoryed = 0;
+	var destoryedMed = 0;
+	var astroidList = [];
+	var astroidExtList = [];
+	var astroidExtMedList = [];
+	var hudAstList = [];
+	var astroidMedList = [];
+	var hudAstMedList = [];
+	var astroidSmallList = [];
+	var hudAstSmallList = [];
+	var astroidSpeed = [];
+	var astroidMedSpeed = [];
+	var astroidSmallSpeed = [];
+	function createCheckerBoard()
+	{
+		//board
+		/*var texture = THREE.ImageUtils.loadTexture('images/star.jpg');
+		var planegeo = new THREE.BoxGeometry( 240, 240, 2 );
+		var planemat = new THREE.MeshBasicMaterial({map:texture});
+		var meshs = new THREE.Mesh( planegeo, planemat );
+		scene.add( meshs );
+		
+		meshs.position.x = 0;
+		meshs.position.y = 0;
+		meshs.position.z = -10;*/
+		destoryed = 0;
+		destoryedMed = 0;
+		astroidList = [];
+		astroidExtList = [];
+		astroidExtMedList = [];
+		hudAstList = [];
+		astroidMedList = [];
+		hudAstMedList = [];
+		astroidSmallList = [];
+		hudAstSmallList = [];
+		astroidSpeed = [];
+		astroidMedSpeed = [];
+		astroidSmallSpeed = [];
+		
+		if(numberMade < 32){
+			numberMade = Math.ceil(numberMade * 1.5);
+		}
+		
+		var i = 0;
+		while(i < numberMade){
+			generateAstroid(Math.random()*2*Math.PI);
+			i++;
+		}
+		
+		invicible = 1;
+		diedTimer();
+	}
+	
+	function generateAstroid(ang){
+		
+		var astGeo = new THREE.DodecahedronGeometry( 10, 0  );
+		var astMat = new THREE.MeshLambertMaterial({color:'brown'});
+		var ast = new THREE.Mesh( astGeo, astMat );
+		
+		ast.position.x = 150*ang;
+		ast.position.y = 150*ang;
+		
+		if(Math.abs(ast.position.x - cannon.position.x) < 30 && Math.abs(ast.position.y - cannon.position.y) < 30)
+		{
+			ast.position.x = ast.position.x + 30;
+			ast.position.y = ast.position.y + 30;
+		}
+		
+		var Geo = new THREE.BoxGeometry( 10, 10, 10 );
+		var Mat = new THREE.MeshBasicMaterial({color:'blue'});
+		var box = new THREE.Mesh( Geo, Mat );
+		
+		box.position.x = 10000 + ast.position.x;
+		box.position.y = 10000 + ast.position.y;
+		
+		hudAstList.push(box);
+		
+		scene.add(box);
+		
+		var spd = new THREE.Vector2(0,0);
+		spd.x = .5*Math.cos(ang);
+		spd.y = .5*Math.sin(ang);
+		
+		astroidList.push(ast);
+		astroidSpeed.push(spd);
+		
+		astroidExtList.push(0);
+		
+		scene.add(ast);
+		
+	}
+	
+	function bigAstroHit(num){
+	
+		score(20);
+		var astGeo = new THREE.IcosahedronGeometry( 7, 0 );
+		var astMat = new THREE.MeshLambertMaterial({color:'orange'});
+		var ast1 = new THREE.Mesh( astGeo, astMat );
+		var ast2 = new THREE.Mesh( astGeo, astMat );
+		
+		ast1.position.x = astroidList[num].position.x;
+		ast1.position.y = astroidList[num].position.y;
+		ast2.position.x = astroidList[num].position.x;
+		ast2.position.y = astroidList[num].position.y;
+		
+		scene.remove(astroidList[num]);
+
+		astroidExtList[num] = 1;
+		destoryed++;
+		//delete astroidList[num];
+		
+		scene.remove(hudAstList[num]);
+
+		delete hudAstList[num];
+		
+		var spd = new THREE.Vector2(0,0);
+		
+		spd.x = 2.5*astroidSpeed[num].x;
+		spd.y = 1.1*astroidSpeed[num].y;
+		astroidMedSpeed.push(spd);
+		
+		var spd1 = new THREE.Vector2(0,0);
+		
+		spd1.x = 1.1*astroidSpeed[num].y;
+		spd1.y = 2.5*astroidSpeed[num].x;
+		astroidMedSpeed.push(spd1);
+		
+		scene.add(ast1);
+		scene.add(ast2);
+		astroidMedList.push(ast1);
+		astroidMedList.push(ast2);
+		astroidExtMedList.push(0);
+		astroidExtMedList.push(0);
+		
+		var Geo = new THREE.BoxGeometry( 10, 10, 10 );
+		var Mat = new THREE.MeshBasicMaterial({color:'blue'});
+		var box = new THREE.Mesh( Geo, Mat );
+		
+		box.position.x = 10000 + ast1.position.x;
+		box.position.y = 10000 + ast1.position.y;
+		
+		hudAstMedList.push(box);
+		
+		scene.add(box);
+		
+		var Geo2 = new THREE.BoxGeometry( 10, 10, 10 );
+		var Mat2 = new THREE.MeshBasicMaterial({color:'blue'});
+		var box2 = new THREE.Mesh( Geo, Mat );
+		
+		box2.position.x = 10000 + ast1.position.x;
+		box2.position.y = 10000 + ast1.position.y;
+		
+		hudAstMedList.push(box2);
+		
+		scene.add(box2);
+	}
+	
+	function medAstroHit(num){
+	
+		score(50);
+		var astGeo = new THREE.OctahedronGeometry( 4, 0 );
+		var astMat = new THREE.MeshLambertMaterial({color:'yellow'});
+		var ast3 = new THREE.Mesh( astGeo, astMat );
+		var ast4 = new THREE.Mesh( astGeo, astMat );
+		
+		ast3.position.x = astroidMedList[num].position.x;
+		ast3.position.y = astroidMedList[num].position.y;
+		ast4.position.x = astroidMedList[num].position.x;
+		ast4.position.y = astroidMedList[num].position.y;
+		
+		scene.remove(astroidMedList[num]);
+
+		destoryedMed++;
+		//delete astroidMedList[num];
+		astroidExtMedList[num] = 1;
+		scene.remove(hudAstMedList[num]);
+
+		delete hudAstMedList[num];
+		/*
+		var spd3 = new THREE.Vector2(0,0);
+		
+		spd3.x = 2*astroidMedSpeed.x;
+		spd3.y = 1.5*astroidMedSpeed.y;
+		astroidSmallSpeed.push(spd3);
+		
+		var spd4 = new THREE.Vector2(0,0);
+		
+		spd4.x = 1.5*astroidMedSpeed.y;
+		spd4.y = 2*astroidMedSpeed.x;
+		astroidSmallSpeed.push(spd4);
+		
+		scene.add(ast3);
+		scene.add(ast4);
+		astroidSmallList.push(ast3);
+		astroidSmallList.push(ast4);*/
+		
+	}
+	
+	function smallAstroHit(num){
+	
+		scene.remove(astroidSmallList[num]);
+
+		delete astroidSmallList[num];
+		
+	}
+	
+	var canMesh;
+	function generatePieces()
+	{
+	/*
+	var textColor = new THREE.MeshBasicMaterial( { color: 'yellow' } );
+	var text = new THREE.TextGeometry( "0", { size: 8, height: .1, curveSegments: 6, font: "helvetiker"});
+	var Score = new THREE.Mesh(text, textColor);*/
+	
+	var SquareGeo = new THREE.BoxGeometry( 10, 10, 10);
+	var playerColor = new THREE.MeshBasicMaterial({color:'red'});
+	var i = 1;
+	
+		
+		canMesh = new THREE.Mesh( SquareGeo, playerColor );
+		
+		//mesh.rotation.z = Math.PI / 2;
+		canMesh.position.x = 10000;
+		canMesh.position.y = 10000;
+		canMesh.position.z = 0;
+		
+		
+		//mesh.name = "Player" + i;
+		//playerList.push( mesh );
+		scene.add( canMesh );
+		
+		//---------------------------- radar circles -------------------------------
+		var material = new THREE.MeshBasicMaterial({
+			color: 0xe09000
+		});
+
+		var radius = 100;
+		var segments = 32;
+
+		var circleGeometry = new THREE.CircleGeometry( radius, segments );
+		var circle = new THREE.Mesh( circleGeometry, material );
+		
+		circle.position.x = 10000;
+		circle.position.y = 10000;
+		circle.position.z = -1;
+		
+		scene.add( circle );
+		
+		var material2 = new THREE.MeshBasicMaterial({
+			color: 0xf0f000
+		});
+
+		var radius2 = 200;
+		var segments2 = 32;
+
+		var circleGeometry2 = new THREE.CircleGeometry( radius2, segments2 );
+		var circle2 = new THREE.Mesh( circleGeometry2, material2 );
+		
+		circle2.position.x = 10000;
+		circle2.position.y = 10000;
+		circle2.position.z = -2;
+		
+		scene.add( circle2 );
+		
+		var material3 = new THREE.MeshBasicMaterial({
+			color: 0x00ffff
+		});
+
+		var radius3 = 250;
+		var segments3 = 32;
+
+		var circleGeometry3 = new THREE.CircleGeometry( radius3, segments3 );
+		var circle3 = new THREE.Mesh( circleGeometry3, material3 );
+		
+		circle3.position.x = 10000;
+		circle3.position.y = 10000;
+		circle3.position.z = -3;
+		
+		scene.add( circle3 );
+
+		//--------------------------------
+		
+		//---------------------------- screen circles -------------------------------
+		/*var material = new THREE.MeshBasicMaterial({
+			color: 0xe09000,
+			wireframe: true
+		});
+
+		var radius = 100;
+		var segments = 32;
+
+		var circleGeometry = new THREE.CircleGeometry( radius, segments );
+		var circle = new THREE.Mesh( circleGeometry, material );
+		
+		circle.position.x = 0;
+		circle.position.y = 0;
+		circle.position.z = 0;
+		
+		scene.add( circle );
+		
+		var material2 = new THREE.MeshBasicMaterial({
+			color: 0xf0f000,
+			wireframe: true
+		});
+
+		var radius2 = 200;
+		var segments2 = 32;
+
+		var circleGeometry2 = new THREE.CircleGeometry( radius2, segments2 );
+		var circle2 = new THREE.Mesh( circleGeometry2, material2 );
+		
+		circle2.position.x = 0;
+		circle2.position.y = 0;
+		circle2.position.z = 0;
+		
+		scene.add( circle2 );
+		
+		var material3 = new THREE.MeshBasicMaterial({
+			color: 0x00ffff,
+			wireframe: true
+		});
+
+		var radius3 = 250;
+		var segments3 = 32;
+
+		var circleGeometry3 = new THREE.CircleGeometry( radius3, segments3 );
+		var circle3 = new THREE.Mesh( circleGeometry3, material3 );
+		
+		circle3.position.x = 0;
+		circle3.position.y = 0;
+		circle3.position.z = 0;
+		
+		scene.add( circle3 );*/
+
+		//--------------------------------
+	
+		var CylinderGeometry = new THREE.CylinderGeometry( .1, 3 , 10 , 32 );
+		var cylinderMaterial = new THREE.MeshLambertMaterial({color:'red'});
+		var can = new THREE.Mesh( CylinderGeometry, cylinderMaterial );
+		//can.position.y = -5;
+		
+		var cannon1 = new THREE.Object3D();
+		cannon1.add( can );
+		
+		cannon1.rotation.x = 0;//Math.PI / 2;
+		cannon1.rotation.x = -.01;
+		cannon1.position.y = -15;
+		cannon1.position.z = 0;
+		//scene.add( cannon );
+		
+		cannon = new THREE.Object3D();//create an empty container
+		//cannon.add( mesh );//add a mesh with geometry to it
+		cannon.add( cannon1 );
+		cannon.add( spotLight );
+		//cannon.add( mesh );
+		//cannon.add( hubcamera );
+		cannon.add( camera );
+		scene.add( cannon );//when done, add the group to the scene
+		
+	}
+	
+	var lives = 3;
+	function died()
+	{
+		if(lives != 0){
+			invicible = 1;
+			lives--;
+			document.getElementById("result2").innerHTML = lives;
+			speed = new THREE.Vector2(0,0);
+		
+			cannon.position.x = 0;
+			cannon.position.y = 0;
+			
+			diedTimer();
+		} 
+		else
+		{
+			gameOver();
+		}
+	}
+	
+	function gameOver()
+	{
+		//cannon reset
+		speed = new THREE.Vector2(0,0);
+		
+		cannon.position.x = 0;
+		cannon.position.y = 0;
+		
+		//remove astroids
+		numberMade = 4;
+		
+		//medium
+		for( var j = 0; j < astroidMedList.length; j++)
+		{
+			if(astroidExtMedList[j] != 1){
+				scene.remove(astroidMedList[j]);
+				scene.remove(hudAstMedList[j]);
+			}
+		}
+		//large
+		for( var j = 0; j < astroidList.length; j++)
+		{
+			if(astroidExtList[j] != 1){
+				scene.remove(astroidList[j]);
+				scene.remove(hudAstList[j]);
+			}
+		}
+		
+		//reset lives
+		lives = 3
+		
+		//reset score
+		dataLives = 0;
+		data = 0;
+		
+		document.getElementById("result2").innerHTML = lives;
+		
+		document.getElementById("result").innerHTML = data;
+		
+		running = false;
+		
+		createCheckerBoard();
+	}
+	
+	var angle = 0;
+	var speed = new THREE.Vector2(0,0);
+	var bulletSpeed = [];
+	var running = false;
+	function render()
+	{
+		//if(running){
+		
+		
+		if(destoryed == numberMade && destoryedMed == numberMade*2){
+			createCheckerBoard();
+		}
+		//small
+		/*for( var j = 0; j < astroidSmallList.length; j++)
+		{
+			if(astroidSmallList[j] != undefined){
+				for(var i = 0; i < bulletlist.length; i++)
+				{
+					if(bulletlist[i] != undefined){
+						if(Math.sqrt(Math.pow(bulletlist[i].position.x - astroidSmallList[j].position.x,2) + Math.pow(bulletlist[i].position.y - astroidSmallList[j].position.y,2)) <= 5)
+						{
+							scene.remove(bulletlist[i]);
+							delete bulletlist[i];
+							smallAstroHit(j);
+						}
+					}
+				}
+			}
+		}*/
+		//med
+		for( var j = 0; j < astroidMedList.length; j++)
+		{
+			if(astroidExtMedList[j] != 1){
+				for(var i = 0; i < bulletlist.length; i++)
+				{
+					if(bulletlist[i] != undefined){
+						if(Math.sqrt(Math.pow(bulletlist[i].position.x - astroidMedList[j].position.x,2) + Math.pow(bulletlist[i].position.y - astroidMedList[j].position.y,2)) <= 8)
+						{
+							scene.remove(bulletlist[i]);
+							delete bulletlist[i];
+							medAstroHit(j);
+						}
+					}
+				}
+			}
+		}
+		//large
+		for( var j = 0; j < astroidList.length; j++)
+		{
+			if(astroidExtList[j] != 1){
+				for(var i = 0; i < bulletlist.length; i++)
+				{
+					if(bulletlist[i] != undefined){
+						if(Math.sqrt(Math.pow(bulletlist[i].position.x - astroidList[j].position.x,2) + Math.pow(bulletlist[i].position.y - astroidList[j].position.y,2)) <= 11)
+						{
+							scene.remove(bulletlist[i]);
+							delete bulletlist[i];
+							bigAstroHit(j);
+						}
+					}
+				}
+			}
+		}
+		
+		//for collision
+		
+		if(invicible == 0)
+		{
+			//med
+			for( var j = 0; j < astroidMedList.length; j++)
+			{
+				if(astroidExtMedList[j] != 1)
+				{
+					if(Math.sqrt(Math.pow(cannon.position.x - astroidMedList[j].position.x,2) + Math.pow(cannon.position.y - astroidMedList[j].position.y,2)) <= 8)
+					{
+						died();
+					}
+				}
+			}
+			//large
+			for( var j = 0; j < astroidList.length; j++)
+			{
+				if(astroidExtList[j] != 1)
+				{
+					if(Math.sqrt(Math.pow(cannon.position.x - astroidList[j].position.x,2) + Math.pow(cannon.position.y - astroidList[j].position.y,2)) <= 11)
+					{
+						died();
+					}
+				}
+			}
+		}
+		
+		cannon.position.x += speed.x;
+		cannon.position.y += speed.y;
+		
+		
+		if(cannon.position.x >= SIZE*5)
+		{
+			cannon.position.x -= SIZE*5;
+		}
+		else if(cannon.position.x <= -SIZE*5)
+		{
+			cannon.position.x += SIZE*5;
+		}
+		else if(cannon.position.y >= SIZE*5)
+		{
+			cannon.position.y -= SIZE*5;
+		}
+		else if(cannon.position.y <= -SIZE*5)
+		{
+			cannon.position.y += SIZE*5;
+		}
+		//bullet move
+		for(var i = 0; i < bulletlist.length; i++)
+		{
+			if(bulletlist[i] != undefined){
+				bulletlist[i].position.x += bulletSpeed[i].x;
+				bulletlist[i].position.y += bulletSpeed[i].y;
+			}
+		}
+		//large
+		for(var i = 0; i < astroidList.length; i++){
+			if(astroidExtList[i] != 1){
+				astroidList[i].position.x += astroidSpeed[i].x;
+				astroidList[i].position.y += astroidSpeed[i].y;
+			
+				if((astroidList[i].position.x - cannon.position.x) >= SIZE/2)
+				{
+					astroidList[i].position.x -= SIZE;
+				}
+				else if((astroidList[i].position.x - cannon.position.x) <= -SIZE/2)
+				{
+					astroidList[i].position.x += SIZE;
+				}
+				else if((astroidList[i].position.y - cannon.position.y) >= SIZE/2)
+				{
+					astroidList[i].position.y -= SIZE;
+				}
+				else if((astroidList[i].position.y - cannon.position.y) <= -SIZE/2)
+				{
+					astroidList[i].position.y += SIZE;
+				}
+			}
+		}
+		//med
+		for(var i = 0; i < astroidMedList.length; i++){
+			if(astroidExtMedList[j] != 1){
+				astroidMedList[i].position.x += astroidMedSpeed[i].x;
+				astroidMedList[i].position.y += astroidMedSpeed[i].y;
+			
+				if((astroidMedList[i].position.x - cannon.position.x) >= SIZE/2)
+				{
+					astroidMedList[i].position.x -= SIZE;
+				}
+				else if((astroidMedList[i].position.x - cannon.position.x) <= -SIZE/2)
+				{
+					astroidMedList[i].position.x += SIZE;
+				}
+				else if((astroidMedList[i].position.y - cannon.position.y) >= SIZE/2)
+				{
+					astroidMedList[i].position.y -= SIZE;
+				}
+				else if((astroidMedList[i].position.y - cannon.position.y) <= -SIZE/2)
+				{
+					astroidMedList[i].position.y += SIZE;
+				}
+			}
+		}
+		//small
+		/*for(var i = 0; i < astroidSmallList.length; i++){
+			if(astroidSmallList[i] != undefined){
+				astroidSmallList[i].position.x += astroidSmallSpeed[i].x;
+				astroidSmallList[i].position.y += astroidSmallSpeed[i].y;
+			
+				if((astroidSmallList[i].position.x - cannon.position.x) >= SIZE/2)
+				{
+					astroidSmallList[i].position.x -= SIZE;
+				}
+				else if((astroidSmallList[i].position.x - cannon.position.x) <= -SIZE/2)
+				{
+					astroidSmallList[i].position.x += SIZE;
+				}
+				else if((astroidSmallList[i].position.y - cannon.position.y) >= SIZE/2)
+				{
+					astroidSmallList[i].position.y -= SIZE;
+				}
+				else if((astroidSmallList[i].position.y - cannon.position.y) <= -SIZE/2)
+				{
+					astroidSmallList[i].position.y += SIZE;
+				}
+			}
+		}*/
+		
+		
+		angle = cannon.rotation.z;
+		
+		if( keyboard.pressed('up') )
+		{
+			speed.x += 0.04*Math.cos(angle + Math.PI/2);
+			speed.y += 0.04*Math.sin(angle + Math.PI/2);
+			
+			if (Math.abs(speed.x) >= 2) {
+				speed.x -= 0.04*Math.cos(angle + Math.PI/2);
+			}
+			if (Math.abs(speed.y) >= 2) {
+				speed.y -= 0.04*Math.sin(angle + Math.PI/2);
+			}
+		}
+		else if( keyboard.pressed('down') )
+		{
+			speed.x -= .02*speed.x;
+			speed.y -= .02*speed.y;
+		}
+		
+		if( keyboard.pressed('right') )
+		{
+			cannon.rotation.z += .01*Math.PI;
+			hudcamera.rotation.z += .01*Math.PI;
+		}
+		else if( keyboard.pressed('left') )
+		{
+			cannon.rotation.z -= .01*Math.PI;
+			hudcamera.rotation.z -= .01*Math.PI;
+		}
+		
+		if( keyboard.pressed('tab') && bulletShot == false)
+		{
+			if(bulletlist.length < 9){
+				var Bspeed = new THREE.Vector3(0,0,0);
+			
+				var bullet2 = new THREE.Mesh( bulGeo, bulMat );
+				bulletShot = true;
+				shoot();
+				bulletlist.push(bullet2);
+				bullet2.position.x = cannon.position.x;
+				bullet2.position.y = cannon.position.y;
+				bullet2.position.z = cannon.position.z;
+			
+				Bspeed.x += speed.x + 2*Math.cos(angle + Math.PI/2);
+				Bspeed.y += speed.y + 2*Math.sin(angle + Math.PI/2);
+			
+				bulletSpeed.push(Bspeed);
+				scene.add( bullet2 );
+			}
+		}
+		
+		if(bulletToDelete > 0){
+			scene.remove( bulletlist.shift());
+			bulletSpeed.shift();
+			bulletToDelete--;
+		}
+		
+		
+		//hud elements
+
+		canMesh.position.x = cannon.position.x + 10000;
+		canMesh.position.y = cannon.position.y + 10000;
+		hudcamera.position.x = cannon.position.x + 10000;
+		hudcamera.position.y = cannon.position.y + 10000;
+		
+		for( var j = 0; j < astroidList.length; j++)
+		{
+			if(astroidExtList[j] != 1){
+				hudAstList[j].position.x = astroidList[j].position.x + 10000;
+				hudAstList[j].position.y = astroidList[j].position.y + 10000;
+			}
+		}
+		
+		for( var j = 0; j < astroidMedList.length; j++)
+		{
+			if(astroidExtMedList[j] != 1){
+				hudAstMedList[j].position.x = astroidMedList[j].position.x + 10000;
+				hudAstMedList[j].position.y = astroidMedList[j].position.y + 10000;
+			}
+		}
+		/*for( var j = 0; j < astroidSmallList.length; j++)
+		{
+			hudAstSmallList[j].position.x = astroidSmallList[j].position.x + 10000;
+			hudAstSmallList[j].position.y = astroidSmallList[j].position.y + 10000;
+		}*/
+		
+		
+		
+		/*}
+		else
+		{
+		
+			if( keyboard.pressed('tab'))
+			{
+				running = true;
+			}
+		
+		}*/
+		
+		requestAnimationFrame( render );
+		renderer.render( scene, camera );
+		
+		var aspect = 1;//window.innerWidth / window.innerHeight;
+		/*renderer2.enableScissorTest(true);
+		var horz_ratio = window.innerWidth/window.innerHeight;
+		renderer2.setViewport( 0, 0, 200 * aspect, 200* aspect);
+		renderer2.setScissor( 0, 0, 200 * aspect/horz_ratio, 200* aspect*horz_ratio  );*/
+		renderer2.render( scene, hudcamera );
+	}
+	var renderer2;
+	
+	window.onload = init;
+	
+	//webgl
+	var data = 0;
+	var dataLives = 0;
+	function score(num)
+	{
+		data = data + num;
+		dataLives = dataLives + num;
+		if(dataLives > 1000){
+			lives++;
+			document.getElementById("result2").innerHTML = lives;
+			dataLives -= 1000;
+		}
+		
+		document.getElementById("result").innerHTML = data;
+	}
+	
+	var invicible = 0;
+	function diedTimer()
+	{
+		var blob = new Blob([document.getElementById('worker2').textContent]); 
+		var worker = new Worker( window.webkitURL.createObjectURL( blob ) ); 
+
+		worker.postMessage({'start':true});
+		
+		worker.onmessage = function(e) 
+		{
+			//document.getElementById("result").innerHTML = event.data
+			
+			if( event.data == 4 ){
+				invicible = 0;
+				//scene.remove( bulletlist.shift());
+				//bulletSpeed.shift();
+				worker.terminate();
+			}
+		}
+		
+	}
+	
+	var bulletToDelete = 0;
+	function shoot()
+	{
+		var blob = new Blob([document.getElementById('worker2').textContent]); 
+		var worker = new Worker( window.webkitURL.createObjectURL( blob ) ); 
+
+		worker.postMessage({'start':true});
+		
+		worker.onmessage = function(e) 
+		{
+			//document.getElementById("result").innerHTML = event.data;
+			if( event.data == 2 ){
+				bulletShot = false;
+			}
+			
+			if( event.data == 4 ){
+				bulletToDelete++;
+				//scene.remove( bulletlist.shift());
+				//bulletSpeed.shift();
+				worker.terminate();
+			}
+		}
+		
+	}
+	
+	//document.getElementById( "rollit" ).addEventListener('click', rollit_handler, false);
+</script>
+
+</body>
+
+</html>
